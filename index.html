@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+  <!-- Based on https://github.com/BitySA/oauth2-auth-code-pkce/blob/master/tests/panel.html -->
+  <head>
+    <title>Public Client Lookup API Test</title>
+  </head>
+  <body>
+    <h1>Public Client Lookup API Test</h1>
+    <button onclick="startAuthFlow()">Start OAuth Flow</button>
+    <div id="result"></div>
+    <h2>Lookup API Result</h2>
+    <div>Your Lookup details should appear here</div>
+    <pre id="echoResponse"></pre>
+    <script src="https://unpkg.com/@bity/oauth2-auth-code-pkce@2.13.0/index.umd.js"></script>
+    <script src="https://unpkg.com/jwt-decode@3.1.2/build/jwt-decode.js"></script>
+    <script>
+      const { OAuth2AuthCodePKCE } = window.OAuth2AuthCodePKCE;
+      //const urlBase = 'https://devopsaccountrecoveryapigeestaging-eval-prod.apigee.net/';
+      //const clientId = 'GNASyAOjTzhzS5gQIC2SwGKPl914MFnE';
+      //const urlBase = 'https://api.apps.cam.ac.uk/';
+      //const clientId = 'H2zAJFSup4mire0as7delrDN6KCAv1mz';
+      const urlBase = 'https://devopsaccountrecoveryapigeestaging-eval-prod.apigee.net/';
+      const clientId = 'WaZd9gnxL0RIAWs4p5Bblu46wbUnSAL8';
+
+      const oauth = new OAuth2AuthCodePKCE({
+        authorizationUrl: `${urlBase}oauth2/v1/auth`,
+        tokenUrl: `${urlBase}oauth2/v1/token`,
+        clientId: clientId,
+        scopes: ['openid', 'profile', 'email', 'https://api.apps.cam.ac.uk/lookup'],
+        explicitlyExposedTokens: ["id_token"],
+        redirectUrl: location.href.replace(location.search, ''),
+        onAccessTokenExpiry(refreshAccessToken) {
+          console.log("Expired! Access token needs to be renewed.");
+          alert("We will try to get a new access token via grant code or refresh token.");
+          return refreshAccessToken();
+        },
+        onInvalidGrant(refreshAuthCodeOrRefreshToken) {
+          console.log("Expired! Auth code or refresh token needs to be renewed.");
+          alert("Redirecting to auth server to obtain a new auth grant code.");
+          return refreshAuthCodeOrRefreshToken();
+        }
+      });
+
+      function startAuthFlow() { oauth.fetchAuthorizationCode(); }
+
+      function onNewToken(payload) {
+        console.log('Got new token', payload);
+        const { explicitlyExposedTokens: { id_token }, token } = payload
+
+        const { sub, name } = window.jwt_decode(id_token);
+        const crsid = (sub || "").split("@")[0];
+
+        document.getElementById("result").textContent = "Obtained access token";
+        fetch(
+          `${urlBase}lookup-test/v1/person/crsid/${crsid}?fetch=all_attrs`,
+          {
+            method: 'GET', mode: 'cors', credentials: 'omit', headers: {
+              Authorization: `Bearer ${token.value}`,
+              Accept: 'application/json'
+            }
+          }
+        ).then(response => response.json()).then(body => {
+          document.getElementById("echoResponse").textContent = JSON.stringify(body, null, 2);
+        });
+      }
+
+      oauth.isReturningFromAuthServer().then(hasBeenRedirected => {
+        if (hasBeenRedirected) {
+          window.location.replace(window.location.pathname);
+          return;
+        }
+        return oauth.getAccessToken().then(onNewToken);
+      })
+      .catch((potentialError) => {
+        if (potentialError) {
+          console.error(potentialError);
+        }
+      });
+    </script>
+  </body>
+</html>
